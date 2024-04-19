@@ -3184,10 +3184,8 @@ class Database(_callable_context_manager):
         self.thread_safe = thread_safe
         if thread_safe:
             self._state = _ConnectionLocal()
-            self._lock = threading.Lock()
         else:
             self._state = _ConnectionState()
-            self._lock = _NoopLock()
 
         if autorollback:
             __deprecated__('Peewee no longer uses the "autorollback" option, '
@@ -3238,21 +3236,20 @@ class Database(_callable_context_manager):
         raise NotImplementedError
 
     def connect(self, reuse_if_open=False):
-        with self._lock:
-            if self.deferred:
-                raise InterfaceError('Error, database must be initialized '
-                                     'before opening a connection.')
-            if not self._state.closed:
-                if reuse_if_open:
-                    return False
-                raise OperationalError('Connection already opened.')
+        if self.deferred:
+            raise InterfaceError('Error, database must be initialized '
+                                 'before opening a connection.')
+        if not self._state.closed:
+            if reuse_if_open:
+                return False
+            raise OperationalError('Connection already opened.')
 
-            self._state.reset()
-            with __exception_wrapper__:
-                self._state.set_connection(self._connect())
-                if self.server_version is None:
-                    self._set_server_version(self._state.conn)
-                self._initialize_connection(self._state.conn)
+        self._state.reset()
+        with __exception_wrapper__:
+            self._state.set_connection(self._connect())
+            if self.server_version is None:
+                self._set_server_version(self._state.conn)
+            self._initialize_connection(self._state.conn)
         return True
 
     def _initialize_connection(self, conn):
@@ -3262,21 +3259,20 @@ class Database(_callable_context_manager):
         self.server_version = 0
 
     def close(self):
-        with self._lock:
-            if self.deferred:
-                raise InterfaceError('Error, database must be initialized '
-                                     'before opening a connection.')
-            if self.in_transaction():
-                raise OperationalError('Attempting to close database while '
-                                       'transaction is open.')
-            is_open = not self._state.closed
-            try:
-                if is_open:
-                    with __exception_wrapper__:
-                        self._close(self._state.conn)
-            finally:
-                self._state.reset()
-            return is_open
+        if self.deferred:
+            raise InterfaceError('Error, database must be initialized '
+                                 'before opening a connection.')
+        if self.in_transaction():
+            raise OperationalError('Attempting to close database while '
+                                   'transaction is open.')
+        is_open = not self._state.closed
+        try:
+            if is_open:
+                with __exception_wrapper__:
+                    self._close(self._state.conn)
+        finally:
+            self._state.reset()
+        return is_open
 
     def _close(self, conn):
         conn.close()
